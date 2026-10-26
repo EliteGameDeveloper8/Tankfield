@@ -46,7 +46,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 #modes small{display:block;font-weight:400;opacity:.75}
 #modes .on{background:var(--ink);color:var(--paper)}
 #leave{position:fixed;left:10px;bottom:10px;padding:6px 10px;font-size:13px}
-#smb{width:min(440px,100%);font-size:13px}
+#smb,#mpb{width:min(440px,100%);font-size:13px}
 </style>
 </head>
 <body>
@@ -57,6 +57,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
   <input id="nm" maxlength="14" placeholder="Your name" autocomplete="off">
   <div id="modes"></div>
   <button id="smb"></button>
+  <button id="mpb"></button>
   <button id="solo" class="pri">Play solo with bots</button>
   <button id="host">Host an online room</button>
   <div class="row"><input id="code" maxlength="4" placeholder="Room code" autocomplete="off"><button id="join">Join</button></div>
@@ -76,7 +77,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script>
-const $=i=>document.getElementById(i),cv=$('c'),g=cv.getContext('2d'),MAP=3000;
+const $=i=>document.getElementById(i),cv=$('c'),g=cv.getContext('2d');let MAP=3000;
 const COL=['#3b82c4','#d2574a','#e0a431','#4fa36a','#8a68bd','#d86f9e','#34a0a4','#7b8791'];
 const UPN=['Damage','Reload','Bullet speed','Max health','Move speed','Health regen','Bullet range','Body damage'];
 const UPR=[0,1,3,0,1,4,3,5,2,6,7];
@@ -99,11 +100,28 @@ penta:['Penta Shot','triple',20,.55,1.1,1,1,1,F(5,24,.55,1.6)],
 octo:['Octo Tank','quad',20,.5,1,1,1,1,R(8,.55,1.6)],
 ranger:['Ranger','assassin',20,2.6,2.2,2.1,2.3,.85,[B(0,0,.7,3)]],
 anni:['Annihilator','destroyer',20,5,3.2,.8,1,.85,[B(0,0,1.7,1.7)]],
-booster:['Booster','triangle',20,.6,1,1,1,1.3,[B(0,0,.7,1.6),B(150,0,.6,1.4),B(-150,0,.6,1.4),B(160,.35,.6,1.4),B(-160,-.35,.6,1.4)]]};
-let lastKey='',gm='ffa',EV=[],zr=2160,rt=0,bn='',FEED=[],PT=[],sel='ffa',sm='split';
+booster:['Booster','triangle',20,.6,1,1,1,1.3,[B(0,0,.7,1.6),B(150,0,.6,1.4),B(-150,0,.6,1.4),B(160,.35,.6,1.4),B(-160,-.35,.6,1.4)]],
+pounder:['Pounder','tank',5,1.8,1.5,.9,1,.95,[B(0,0,1,1.7)]],
+shotgun:['Shotgun','pounder',12,.7,1.6,1.1,.5,1,F(5,14,.35,1.4)],
+hunter:['Hunter','sniper',12,1.3,1.4,1.5,1.7,.95,[B(0,0,.5,2.3),B(0,0,.85,1.9)]],
+triplet:['Triplet','twin',12,.5,1,1,1,1,[B(0,-.5,.4,1.4),B(0,.5,.4,1.4),B(0,0,.5,1.8)]],
+streamliner:['Streamliner','gunner',20,.3,.4,1.2,.9,1,[B(0,-.45,.35,1.3),B(0,-.15,.35,1.5),B(0,.15,.35,1.7),B(0,.45,.35,1.9)]],
+predator:['Predator','hunter',20,1.4,1.4,1.6,1.9,.9,[B(0,0,.5,2.5),B(0,0,.75,2.1),B(0,0,1,1.7)]],
+tripletwin:['Triple Twin','twinflank',20,.45,1,1,1,1,[0,120,240].flatMap(a=>[B(a,-.4,.5,1.6),B(a,.4,.5,1.6)])],
+spread:['Spread Shot','triple',20,.35,1,1,.8,1,F(9,12,.4,1.4)],
+blaster:['Blaster','shotgun',20,.8,1.7,1.2,.6,1,F(9,10,.35,1.4)],
+hepta:['Hepta Shot','penta',28,.5,1.1,1,1,1,F(7,20,.5,1.6)],
+dodeca:['Dodeca Tank','octo',28,.45,1,1,1,1,R(12,.5,1.5)],
+sharp:['Sharpshooter','ranger',28,3.6,2.4,2.3,2.5,.8,[B(0,0,.7,3.3)]],
+oblit:['Obliterator','anni',28,8,4,.8,1,.8,[B(0,0,2,1.8)]],
+after:['Afterburner','booster',28,.55,1,1,1,1.5,[B(0,0,.7,1.6),B(150,0,.6,1.4),B(-150,0,.6,1.4),B(160,.35,.6,1.4),B(-160,-.35,.6,1.4),B(170,.1,.6,1.8),B(-170,-.1,.6,1.8)]]};
+let lastKey='',gm='ffa',EV=[],zr=2160,rt=0,bn='',FEED=[],PT=[],sel='ffa',sm='split',mi=1;
 const GM={ffa:'Free for all',teams:'Team battle',rush:'Shape rush',brawl:'Brawl',br:'Last tank standing',hill:'King of the hill',chaos:'Chaos'};
-const GD={ffa:'Every tank for itself',teams:'Blue vs red, no friendly fire',rush:'240 shapes and triple XP',brawl:'Everyone starts at level 15',br:'A shrinking zone, one winner per round',hill:'Hold the center to earn XP',chaos:'Start at level 20 with a random top class'};
-const SHN=()=>gm=='rush'?240:gm=='br'?130:90;
+const GD={ffa:'Every tank for itself',teams:'Blue vs red, no friendly fire',rush:'3x XP and almost 3x more shapes',brawl:'Start at level 15, 10 s frozen to plan your build',br:'Shrinking zone. Half XP and tough shapes, so top classes are out of reach',hill:'Start at level 8, hold the center for XP',chaos:'Start at level 20 with a random top class, half XP'};
+// per-mode tuning: x = XP multiplier, s = shape HP multiplier, n = shape count multiplier, l = start level, f = freeze seconds at spawn, h:0 = no death headstart
+const MC={ffa:{x:1,s:1,n:1},teams:{x:1,s:1,n:1},rush:{x:3,s:1,n:2.7},brawl:{x:1,s:1,n:1,l:15,f:10},br:{x:.5,s:1.6,n:1.4,h:0},hill:{x:1,s:1,n:1,l:8,f:6},chaos:{x:.5,s:1.5,n:1,l:20,f:10}};
+const MS=[['Small',2000],['Medium',3000],['Large',4500],['Huge',6000]];
+const SHN=()=>Math.round(90*MC[gm].n*(MAP/3000)**1.6);
 const SD=[[4,18,30,10,'#e2b94c'],[3,22,60,25,'#d9695b'],[5,32,150,80,'#7c8ed6']]; // sides, radius, hp, xp, color
 const BN=['Rook','Nimbus','Pike','Ember','Juno','Moss','Dash','Quill','Tango','Vex'];
 let W,H,mode='',peer,conn,conns={},P={},BU=[],SH=[],nid=0,S=null,view={},snapT=0,playing=false,myId='host',name='Player';
@@ -114,11 +132,11 @@ const stat=p=>{const c=CL[p.cls];return{dmg:(8+p.st[0]*3.5+p.l*.4)*c[3],rl:(.6-p
 function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight}resize();onresize=resize;
 
 /* ---------- simulation (runs on the host only) ---------- */
-function spawn(p){const a=rnd(0,6.28),d=rnd(0,MAP*.4);Object.assign(p,{x:MAP/2+Math.cos(a)*d,y:MAP/2+Math.sin(a)*d,vx:0,vy:0,a:0,l:1,xp:0,sc:0,pts:0,st:[0,0,0,0,0,0,0,0],cls:'tank',dm:null,ui:0,cd:0,dead:0,prot:2,ai:0});const lv=gm=='brawl'?15:gm=='chaos'?20:gm=='br'?1:Math.max(1,(p.last||1)*.6|0);p.l=lv;p.pts=lv-1;for(let i=1;i<lv;i++)p.sc+=need(i);p.last=0;if(gm=='chaos'){const t=Object.keys(CL).filter(k=>CL[k][2]==20);p.cls=t[Math.random()*t.length|0]}p.hp=stat(p).mh;return p}
+function spawn(p){const a=rnd(0,6.28),d=rnd(0,MAP*.4);Object.assign(p,{x:MAP/2+Math.cos(a)*d,y:MAP/2+Math.sin(a)*d,vx:0,vy:0,a:0,l:1,xp:0,sc:0,pts:0,st:[0,0,0,0,0,0,0,0],cls:'tank',dm:null,ui:0,cd:0,dead:0,prot:2,ai:0});const C=MC[gm],lv=C.l||(C.h===0?1:Math.max(1,(p.last||1)*.6|0));p.l=lv;p.pts=lv-1;for(let i=1;i<lv;i++)p.sc+=need(i);p.last=0;p.fz=C.f||0;if(p.fz)p.prot=p.fz+2;if(gm=='chaos'){const t=Object.keys(CL).filter(k=>CL[k][2]==20);p.cls=t[Math.random()*t.length|0]}p.hp=stat(p).mh;return p}
 function mk(id,n,bot){const A=Object.values(P),tm=gm=='teams'?(A.filter(q=>q.tm==0).length<=A.filter(q=>q.tm==1).length?0:1):-1;
   return P[id]=spawn({id,n,bot,tm,c:tm<0?nid++%8:(nid++,tm),inp:{mx:0,my:0,a:0,f:0}})}
-function mkShape(){const k=Math.random()<.6?0:Math.random()<.7?1:2;return{x:rnd(60,MAP-60),y:rnd(60,MAP-60),k,a:rnd(0,6.28),hp:SD[k][2],vx:0,vy:0}}
-function award(p,x){if(!p)return;x*=gm=='rush'?3:gm=='br'?2:1;p.sc+=x;p.xp+=x;while(p.l<30&&p.xp>=need(p.l)){p.xp-=need(p.l);p.l++;p.pts++}}
+function mkShape(){const k=Math.random()<.6?0:Math.random()<.7?1:2;return{x:rnd(60,MAP-60),y:rnd(60,MAP-60),k,a:rnd(0,6.28),hp:SD[k][2]*MC[gm].s,mx:SD[k][2]*MC[gm].s,vx:0,vy:0}}
+function award(p,x){if(!p)return;x*=MC[gm].x;p.sc+=x;p.xp+=x;while(p.l<30&&p.xp>=need(p.l)){p.xp-=need(p.l);p.l++;p.pts++}}
 function upg(p,i){i|=0;if(p&&p.pts>0&&p.st[i]<7){p.st[i]++;p.pts--}}
 const choices=(c,l)=>Object.keys(CL).filter(k=>CL[k][1]==c&&l>=CL[k][2]);
 function setCls(p,id){const c=CL[id];if(p&&c&&c[1]==p.cls&&p.l>=c[2])p.cls=id}
@@ -163,7 +181,7 @@ function step(dt){
   const pl=Object.values(P);
   for(const p of pl){
     if(p.dead){if(p.bot&&(p.dead-=dt)<=0)spawn(p);continue}
-    const s=stat(p),i=p.inp;if(p.bot)ai(p,dt);
+    const s=stat(p),i=p.inp;if(p.bot)ai(p,dt);if(p.fz>0){p.fz-=dt;i.mx=i.my=i.f=0}
     const raw=Math.hypot(i.mx,i.my),k=Math.min(1,raw),dr=raw||1,e=Math.min(1,dt*6);
     p.vx+=(i.mx/dr*k*s.sp-p.vx)*e;p.vy+=(i.my/dr*k*s.sp-p.vy)*e;
     p.x=Math.max(0,Math.min(MAP,p.x+p.vx*dt));p.y=Math.max(0,Math.min(MAP,p.y+p.vy*dt));
@@ -189,7 +207,7 @@ function step(dt){
     if(hit)BU.splice(i,1);
   }
   for(const h of SH){h.x=Math.max(20,Math.min(MAP-20,h.x+h.vx*dt));h.y=Math.max(20,Math.min(MAP-20,h.y+h.vy*dt));h.vx*=1-dt*1.5;h.vy*=1-dt*1.5;h.a+=dt*.4}
-  if(gm=='br'){zr=Math.max(260,zr-9*dt);const al=pl.filter(p=>!p.dead);
+  if(gm=='br'){zr=Math.max(260,zr-9*MAP/3000*dt);const al=pl.filter(p=>!p.dead);
     if(rt>0){rt-=dt;if(rt<=0){zr=MAP*.72;bn='';for(const p of pl)spawn(p)}}
     else if(al.length<=1){bn=al.length?al[0].n+' wins the round':'Nobody survived';rt=6}}
   else{zr=MAP*.72;bn='';rt=0}
@@ -197,21 +215,21 @@ function step(dt){
 }
 
 function bots(){
-  const pl=Object.values(P),hu=pl.filter(p=>!p.bot).length,bs=pl.filter(p=>p.bot),want=Math.max(3,8-hu);
+  const pl=Object.values(P),hu=pl.filter(p=>!p.bot).length,bs=pl.filter(p=>p.bot),want=Math.max(3,Math.round(8*MAP/3000)-hu);
   for(let i=bs.length;i<want;i++)mk('b'+nid,BN[nid%BN.length],1);
   for(let i=bs.length;i>want;i--)delete P[bs[i-1].id];
 }
 
 function broadcast(){
-  const d={t:'s',g:gm,z:gm=='br'?zr|0:0,w:bn,e:EV,
-    p:Object.values(P).filter(p=>!p.dead).map(p=>({i:p.id,x:p.x|0,y:p.y|0,a:+p.a.toFixed(2),h:p.hp|0,m:stat(p).mh|0,l:p.l,s:p.sc|0,q:Math.min(1,p.xp/need(p.l)),u:p.pts,c:p.c,n:p.n,k:p.cls,pr:p.prot>0?1:0,st:p.st})),
+  const d={t:'s',g:gm,ms:MAP,z:gm=='br'?zr|0:0,w:bn,e:EV,
+    p:Object.values(P).filter(p=>!p.dead).map(p=>({i:p.id,x:p.x|0,y:p.y|0,a:+p.a.toFixed(2),h:p.hp|0,m:stat(p).mh|0,l:p.l,s:p.sc|0,q:Math.min(1,p.xp/need(p.l)),u:p.pts,c:p.c,n:p.n,k:p.cls,pr:p.prot>0?1:0,fz:Math.ceil(Math.max(0,p.fz||0)),st:p.st})),
     b:BU.map(b=>[b.x|0,b.y|0,b.vx|0,b.vy|0,b.r,b.c]),
-    h:SH.map(h=>[h.x|0,h.y|0,h.k,+h.a.toFixed(1),+(h.hp/SD[h.k][2]).toFixed(2)])};
+    h:SH.map(h=>[h.x|0,h.y|0,h.k,+h.a.toFixed(1),+(h.hp/h.mx).toFixed(2)])};
   onSnap(d);for(const c of Object.values(conns))if(c.open)c.send(d);EV=[];
 }
 
 function startSim(){
-  SH=Array.from({length:SHN()},mkShape);bots();
+  zr=MAP*.72;SH=Array.from({length:SHN()},mkShape);bots();
   let last=performance.now(),tick=0;
   setInterval(()=>{const n=performance.now(),dt=Math.min(.1,(n-last)/1000);last=n;step(dt);if(++tick%2==0)broadcast();if(tick%30==0)bots()},33);
 }
@@ -259,7 +277,7 @@ function startJoin(code){
 
 /* ---------- client view ---------- */
 function onSnap(d){
-  S=d;snapT=performance.now();const seen={};for(const e of d.e||[])ev(e);
+  S=d;MAP=d.ms||MAP;snapT=performance.now();const seen={};for(const e of d.e||[])ev(e);
   for(const p of d.p){seen[p.i]=1;const v=view[p.i];if(!v)view[p.i]={...p,t:p};else v.t=p}
   for(const i in view)if(!seen[i])delete view[i];
   const m=d.p.find(p=>p.i==myId);
@@ -274,7 +292,7 @@ function onSnap(d){
 function ev(e){
   if(e[0]==1)for(let i=0;i<7;i++)PT.push({x:e[1],y:e[2],vx:rnd(-120,120),vy:rnd(-120,120),t:.5,c:SD[e[3]][4]});
   else{for(let i=0;i<18;i++)PT.push({x:e[1],y:e[2],vx:rnd(-260,260),vy:rnd(-260,260),t:.8,c:COL[e[3]]});FEED.push([e[4]+' destroyed '+e[5],performance.now()+5000]);if(FEED.length>5)FEED.shift()}}
-function showDead(m){$('dt').textContent='Destroyed by '+m.k;const br=S&&S.g=='br';$('ds').textContent="Final score "+m.s+(br?". The next round starts when one tank is left.":". You restart at level "+({brawl:15,chaos:20}[S&&S.g]||Math.max(1,m.l*.6|0))+".");$('again').style.display=br?'none':'';$('dead').classList.remove('hide')}
+function showDead(m){$('dt').textContent='Destroyed by '+m.k;const br=S&&S.g=='br';$('ds').textContent="Final score "+m.s+(br?". The next round starts when one tank is left.":". You restart at level "+((MC[S&&S.g]||{}).l||Math.max(1,m.l*.6|0))+".");$('again').style.display=br?'none':'';$('dead').classList.remove('hide')}
 const ub=UPN.map((n,i)=>{const b=document.createElement('button');b.onclick=()=>upgrade(i);$('up').appendChild(b);return b});
 function upgrade(i){if(mode=='client'){if(conn&&conn.open)conn.send({t:'u',i})}else upg(P.host,i)}
 
@@ -332,7 +350,7 @@ function frame(now){
   const dt=Math.min(.1,(now-last)/1000);last=now;
   if(playing){readInput();if(P.host)Object.assign(P.host.inp,inp)}
   const k=1-Math.exp(-dt*16);
-  for(const v of Object.values(view)){const t=v.t;v.x+=(t.x-v.x)*k;v.y+=(t.y-v.y)*k;v.a+=(((t.a-v.a+9.4248)%6.2832)-3.1416)*k;for(const f of ['h','m','l','s','q','u','n','c','k','pr','st'])v[f]=t[f]}
+  for(const v of Object.values(view)){const t=v.t;v.x+=(t.x-v.x)*k;v.y+=(t.y-v.y)*k;v.a+=(((t.a-v.a+9.4248)%6.2832)-3.1416)*k;for(const f of ['h','m','l','s','q','u','n','c','k','pr','fz','st'])v[f]=t[f]}
   if(!playing){cam.x=MAP/2+Math.cos(now/9000)*500;cam.y=MAP/2+Math.sin(now/7000)*400}
   const me=view[myId];if(me){cam.x=me.x;cam.y=me.y;z=Math.max(.4,Math.min(W,H)/820)*(1-me.l*.008)}
 
@@ -373,6 +391,7 @@ function frame(now){
       g.fillStyle='#1e2b3355';g.fillRect(bx,by,bw,16);g.fillStyle='#2f7d86';g.fillRect(bx,by,bw*me.q,16);
       g.strokeStyle='#1e2b33';g.lineWidth=2;g.strokeRect(bx,by,bw,16);
       g.fillStyle='#1e2b33';g.textAlign='center';g.font='bold 14px "Trebuchet MS",sans-serif';g.fillText('Level '+me.l+'   Score '+me.s,W/2,by-8);
+      if(me.fz){g.font='bold 26px "Trebuchet MS",sans-serif';g.fillText('Choose your build: '+me.fz+'s',W/2,H/2-90);g.font='14px "Trebuchet MS",sans-serif';g.fillText('Spend your points and pick a class before the round starts',W/2,H/2-64)}
       
     }
   }
@@ -392,12 +411,14 @@ function frame(now){
 requestAnimationFrame(frame);
 
 /* ---------- menu ---------- */
-const getName=()=>{gm=sel;try{localStorage.tf=JSON.stringify([$('nm').value,sel,sm])}catch(e){}return name=$('nm').value.trim().slice(0,14)||'Player'+(Math.random()*90+10|0)};
-try{const sv=JSON.parse(localStorage.tf);$('nm').value=sv[0]||'';if(GM[sv[1]])sel=sv[1];if(sv[2]=='classic')sm='classic'}catch(e){}
+const getName=()=>{gm=sel;MAP=MS[mi][1];try{localStorage.tf=JSON.stringify([$('nm').value,sel,sm,mi])}catch(e){}return name=$('nm').value.trim().slice(0,14)||'Player'+(Math.random()*90+10|0)};
+try{const sv=JSON.parse(localStorage.tf);$('nm').value=sv[0]||'';if(GM[sv[1]])sel=sv[1];if(sv[2]=='classic')sm='classic';if(MS[sv[3]])mi=sv[3]}catch(e){}
 const MB={},mark=()=>{for(const id in MB)MB[id].className=id==sel?'on':''};
 Object.keys(GM).forEach(id=>{const b=document.createElement('button');b.innerHTML=GM[id]+'<small>'+GD[id]+'</small>';b.onclick=()=>{sel=id;mark()};MB[id]=b;$('modes').appendChild(b)});mark();
 const smTxt=()=>$('smb').textContent='Points: '+(sm=='split'?'shared with everyone who helped':'last hit takes all (classic)');
 $('smb').onclick=()=>{sm=sm=='split'?'classic':'split';smTxt()};smTxt();
+const mpTxt=()=>$('mpb').textContent='Map size: '+MS[mi][0]+' ('+MS[mi][1]+')';
+$('mpb').onclick=()=>{mi=(mi+1)%MS.length;mpTxt()};mpTxt();
 function exitGame(){if(mode=='host'&&!confirm('Leaving closes the room for everyone. Leave?'))return;try{if(peer)peer.destroy()}catch(e){}history.replaceState(null,'',location.pathname+location.search);location.reload()}
 $('leave').onclick=exitGame;$('leave2').onclick=exitGame;
 if(/^#[A-Za-z]{4}$/.test(location.hash))$('code').value=location.hash.slice(1);
