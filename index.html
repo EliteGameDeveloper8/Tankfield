@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Tankfield</title>
+<style>
+:root{--ink:#1e2b33;--paper:#f2f5f3;--accent:#2f7d86}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#a9b3ae;font:15px/1.4 "Trebuchet MS",system-ui,sans-serif;color:var(--ink);touch-action:none;-webkit-user-select:none;user-select:none}
+canvas{display:block;width:100%;height:100%}
+.hide{display:none!important}
+.ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;background:rgba(169,179,174,.85);text-align:center}
+.ov>*{width:min(340px,100%)}
+h1{font-size:54px;margin:0;letter-spacing:-1px}
+h2{margin:0;font-size:30px}
+p,small{margin:0;opacity:.8}
+input,button{font:inherit;color:inherit;border:2px solid var(--ink);border-radius:10px;padding:11px 14px;background:var(--paper)}
+input{-webkit-user-select:text;user-select:text}
+button{cursor:pointer;font-weight:700}
+button.pri{background:var(--ink);color:var(--paper)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:8px}
+.row input{flex:1;min-width:0;text-transform:uppercase}
+#up{position:fixed;left:10px;bottom:10px;display:flex;flex-direction:column;gap:5px}
+#up button{padding:6px 10px;font-size:13px;text-align:left;border-radius:8px}
+#room{position:fixed;left:10px;top:10px;padding:6px 10px;border:2px solid var(--ink);border-radius:8px;background:var(--paper);font-size:13px;cursor:pointer;font-weight:700}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="menu" class="ov">
+  <h1>Tankfield</h1>
+  <p>Shoot shapes, level up, outlast everyone.</p>
+  <input id="nm" maxlength="14" placeholder="Your name" autocomplete="off">
+  <button id="solo" class="pri">Play solo with bots</button>
+  <button id="host">Host an online room</button>
+  <div class="row"><input id="code" maxlength="4" placeholder="Room code" autocomplete="off"><button id="join">Join</button></div>
+  <small id="msg"></small>
+  <small>Move: WASD or arrows. Aim: mouse. Shoot: click or space. Upgrade: keys 1 to 5. On a phone, the left thumb moves and the right thumb aims and shoots.</small>
+</div>
+<div id="dead" class="ov hide">
+  <h2 id="dt"></h2><p id="ds"></p>
+  <button id="again" class="pri">Play again</button>
+</div>
+<div id="up" class="hide"></div>
+<div id="room" class="hide"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script>
+const $=i=>document.getElementById(i),cv=$('c'),g=cv.getContext('2d'),MAP=3000;
+const COL=['#3b82c4','#d2574a','#e0a431','#4fa36a','#8a68bd','#d86f9e','#34a0a4','#7b8791'];
+const UPN=['Damage','Reload','Bullet speed','Max health','Move speed'];
+const SD=[[4,18,30,10,'#e2b94c'],[3,22,60,25,'#d9695b'],[5,32,150,80,'#7c8ed6']]; // sides, radius, hp, xp, color
+const BN=['Rook','Nimbus','Pike','Ember','Juno','Moss','Dash','Quill','Tango','Vex'];
+let W,H,mode='',peer,conn,conns={},P={},BU=[],SH=[],nid=0,S=null,view={},snapT=0,playing=false,myId='host',name='Player';
+let mouse={x:0,y:0,d:0},keys={},tj={},inp={mx:0,my:0,a:0,f:0},cam={x:MAP/2,y:MAP/2},z=1;
+const rnd=(a,b)=>a+Math.random()*(b-a),need=l=>40+30*l*l,rad=l=>20+l*.5,cl=v=>Math.max(-1,Math.min(1,+v||0));
+const stat=p=>({dmg:8+p.st[0]*3.5+p.l*.4,rl:.6-p.st[1]*.05,bs:480+p.st[2]*45,mh:100+p.st[3]*28+p.l*5,sp:210+p.st[4]*17});
+
+function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight}resize();onresize=resize;
+
+/* ---------- simulation (runs on the host only) ---------- */
+function spawn(p){const a=rnd(0,6.28),d=rnd(0,MAP*.4);Object.assign(p,{x:MAP/2+Math.cos(a)*d,y:MAP/2+Math.sin(a)*d,vx:0,vy:0,a:0,l:1,xp:0,sc:0,pts:0,st:[0,0,0,0,0],cd:0,dead:0,prot:2,ai:0});p.hp=stat(p).mh;return p}
+function mk(id,n,bot){return P[id]=spawn({id,n,bot,c:nid++%8,inp:{mx:0,my:0,a:0,f:0}})}
+function mkShape(){const k=Math.random()<.6?0:Math.random()<.7?1:2;return{x:rnd(60,MAP-60),y:rnd(60,MAP-60),k,a:rnd(0,6.28),hp:SD[k][2],vx:0,vy:0}}
+function award(p,x){if(!p)return;p.sc+=x;p.xp+=x;while(p.l<30&&p.xp>=need(p.l)){p.xp-=need(p.l);p.l++;p.pts++}}
+function upg(p,i){i|=0;if(p&&p.pts>0&&p.st[i]<7){p.st[i]++;p.pts--}}
+function kill(p,k){award(k,30+p.sc*.5|0);p.dead=p.bot?3:1e9;if(!p.bot){const m={t:'d',s:p.sc|0,k:k?k.n:'a shape'};if(p.id=='host')showDead(m);else if(conns[p.id])conns[p.id].send(m)}}
+
+function ai(p,dt){
+  p.ai-=dt;
+  if(p.ai<=0){p.ai=rnd(.25,.6);let b=null,bd=1e9;
+    for(const q of Object.values(P))if(q!==p&&!q.dead){const d=Math.hypot(q.x-p.x,q.y-p.y);if(d<500&&q.l<p.l+3&&d<bd){b=q;bd=d}}
+    if(!b)for(const s of SH){const d=Math.hypot(s.x-p.x,s.y-p.y);if(d<bd){b=s;bd=d}}
+    p.tg=b;p.tw=rnd(-1,1)}
+  if(p.pts>0)upg(p,Math.random()*5|0);
+  const t=p.tg,i=p.inp;
+  if(t){const dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy)||1,f=d>260?1:d<150?-.6:0;
+    i.a=Math.atan2(dy,dx);i.f=d<520?1:0;i.mx=dx/d*f-dy/d*p.tw*.5;i.my=dy/d*f+dx/d*p.tw*.5}
+  else{i.mx=i.my=0;i.f=0}
+}
+
+function step(dt){
+  const pl=Object.values(P);
+  for(const p of pl){
+    if(p.dead){if(p.bot&&(p.dead-=dt)<=0)spawn(p);continue}
+    const s=stat(p),i=p.inp;if(p.bot)ai(p,dt);
+    const raw=Math.hypot(i.mx,i.my),k=Math.min(1,raw),dr=raw||1,e=Math.min(1,dt*6);
+    p.vx+=(i.mx/dr*k*s.sp-p.vx)*e;p.vy+=(i.my/dr*k*s.sp-p.vy)*e;
+    p.x=Math.max(0,Math.min(MAP,p.x+p.vx*dt));p.y=Math.max(0,Math.min(MAP,p.y+p.vy*dt));
+    p.a=i.a;p.prot-=dt;p.cd-=dt;p.hp=Math.min(s.mh,p.hp+s.mh*.015*dt);
+    if(i.f&&p.cd<=0){p.cd=s.rl;const c=Math.cos(p.a),n=Math.sin(p.a),r=rad(p.l);
+      BU.push({x:p.x+c*r*1.5,y:p.y+n*r*1.5,vx:c*s.bs+p.vx*.3,vy:n*s.bs+p.vy*.3,r:6+p.l*.15,d:s.dmg,o:p.id,t:1.5,c:p.c});p.vx-=c*25;p.vy-=n*25}
+    for(const h of SH){if(h.dead)continue;const d=SD[h.k],dx=p.x-h.x,dy=p.y-h.y,m=Math.hypot(dx,dy);
+      if(m>0&&m<rad(p.l)+d[1]){h.vx-=dx/m*40;h.vy-=dy/m*40;h.hp-=(10+p.l)*dt*3;if(p.prot<=0)p.hp-=(3+h.k*3)*dt*2;
+        if(h.hp<=0){h.dead=1;award(p,d[3])}}}
+    if(p.hp<=0)kill(p,null);
+  }
+  for(let i=BU.length-1;i>=0;i--){
+    const b=BU[i];b.x+=b.vx*dt;b.y+=b.vy*dt;b.t-=dt;let hit=0;
+    if(b.t<=0||b.x<0||b.y<0||b.x>MAP||b.y>MAP)hit=1;
+    else{
+      for(const h of SH){const d=SD[h.k];if(!h.dead&&Math.hypot(h.x-b.x,h.y-b.y)<d[1]+b.r){h.hp-=b.d;h.vx+=b.vx*.02;h.vy+=b.vy*.02;hit=1;if(h.hp<=0){h.dead=1;award(P[b.o],d[3])}break}}
+      if(!hit)for(const p of pl){if(p.id!==b.o&&!p.dead&&p.prot<=0&&Math.hypot(p.x-b.x,p.y-b.y)<rad(p.l)+b.r){p.hp-=b.d;hit=1;if(p.hp<=0)kill(p,P[b.o]);break}}
+    }
+    if(hit)BU.splice(i,1);
+  }
+  for(const h of SH){h.x=Math.max(20,Math.min(MAP-20,h.x+h.vx*dt));h.y=Math.max(20,Math.min(MAP-20,h.y+h.vy*dt));h.vx*=1-dt*1.5;h.vy*=1-dt*1.5;h.a+=dt*.4}
+  SH=SH.filter(h=>!h.dead);while(SH.length<90)SH.push(mkShape());
+}
+
+function bots(){
+  const pl=Object.values(P),hu=pl.filter(p=>!p.bot).length,bs=pl.filter(p=>p.bot),want=Math.max(3,8-hu);
+  for(let i=bs.length;i<want;i++)mk('b'+nid,BN[nid%BN.length],1);
+  for(let i=bs.length;i>want;i--)delete P[bs[i-1].id];
+}
+
+function broadcast(){
+  const d={t:'s',
+    p:Object.values(P).filter(p=>!p.dead).map(p=>({i:p.id,x:p.x|0,y:p.y|0,a:+p.a.toFixed(2),h:p.hp|0,m:stat(p).mh|0,l:p.l,s:p.sc|0,q:Math.min(1,p.xp/need(p.l)),u:p.pts,c:p.c,n:p.n,st:p.st})),
+    b:BU.map(b=>[b.x|0,b.y|0,b.vx|0,b.vy|0,b.r,b.c]),
+    h:SH.map(h=>[h.x|0,h.y|0,h.k,+h.a.toFixed(1),+(h.hp/SD[h.k][2]).toFixed(2)])};
+  onSnap(d);for(const c of Object.values(conns))if(c.open)c.send(d);
+}
+
+function startSim(){
+  SH=Array.from({length:90},mkShape);bots();
+  let last=performance.now(),tick=0;
+  setInterval(()=>{const n=performance.now(),dt=Math.min(.1,(n-last)/1000);last=n;step(dt);if(++tick%2==0)broadcast();if(tick%30==0)bots()},33);
+}
+
+/* ---------- networking (PeerJS / WebRTC, the room creator is the server) ---------- */
+function msg(t){$('msg').textContent=t}
+function begin(){$('menu').classList.add('hide');$('up').classList.remove('hide');playing=true}
+function leave(m){alert(m);location.reload()}
+
+function startSolo(){mode='solo';myId='host';mk('host',name);startSim();begin()}
+
+function startHost(){
+  mode='host';myId='host';
+  const code=Array.from({length:4},()=>'ABCDEFGHJKMNPQRSTUVWXYZ'[Math.random()*23|0]).join('');
+  msg('Opening room...');
+  peer=new Peer('tfld-'+code);
+  peer.on('error',e=>{if(e.type=='unavailable-id'){peer.destroy();startHost()}else msg('Could not open room ('+e.type+')')});
+  peer.on('open',()=>{
+    mk('host',name);startSim();begin();
+    const url=location.origin+location.pathname+'#'+code,r=$('room');
+    r.textContent='Room '+code+' (tap to copy invite link)';r.classList.remove('hide');
+    r.onclick=()=>{if(navigator.clipboard)navigator.clipboard.writeText(url);r.textContent='Link copied. Room '+code}});
+  peer.on('connection',c=>{
+    c.on('data',d=>{
+      if(!d)return;const p=P[c.peer];
+      if(d.t=='join'){conns[c.peer]=c;if(p)spawn(p);else mk(c.peer,String(d.n||'Player').slice(0,14))}
+      else if(p&&d.t=='i'){const i=p.inp;i.mx=cl(d.mx);i.my=cl(d.my);i.a=+d.a||0;i.f=d.f?1:0}
+      else if(p&&d.t=='u')upg(p,d.i)});
+    c.on('close',()=>{delete P[c.peer];delete conns[c.peer]});
+  });
+}
+
+function startJoin(code){
+  mode='client';msg('Connecting...');
+  peer=new Peer();
+  peer.on('error',e=>msg(e.type=='peer-unavailable'?'Room not found. Check the code.':'Connection problem ('+e.type+')'));
+  peer.on('open',id=>{
+    myId=id;conn=peer.connect('tfld-'+code.toUpperCase());
+    conn.on('open',()=>{conn.send({t:'join',n:name});begin()});
+    conn.on('data',d=>{if(d.t=='s')onSnap(d);else if(d.t=='d')showDead(d)});
+    conn.on('close',()=>leave('The host left the room.'));
+  });
+  setInterval(()=>{if(conn&&conn.open&&playing)conn.send({t:'i',mx:inp.mx,my:inp.my,a:inp.a,f:inp.f})},50);
+}
+
+/* ---------- client view ---------- */
+function onSnap(d){
+  S=d;snapT=performance.now();const seen={};
+  for(const p of d.p){seen[p.i]=1;const v=view[p.i];if(!v)view[p.i]={...p,t:p};else v.t=p}
+  for(const i in view)if(!seen[i])delete view[i];
+  const m=d.p.find(p=>p.i==myId);
+  if(m)ub.forEach((b,i)=>{b.textContent=(i+1)+'  '+UPN[i]+'  '+'●'.repeat(m.st[i])+'○'.repeat(7-m.st[i]);b.style.opacity=m.u>0&&m.st[i]<7?1:.55});
+}
+function showDead(m){$('dt').textContent='Destroyed by '+m.k;$('ds').textContent='Final score '+m.s;$('dead').classList.remove('hide')}
+const ub=UPN.map((n,i)=>{const b=document.createElement('button');b.onclick=()=>upgrade(i);$('up').appendChild(b);return b});
+function upgrade(i){if(mode=='client'){if(conn&&conn.open)conn.send({t:'u',i})}else upg(P.host,i)}
+
+/* ---------- input ---------- */
+onkeydown=e=>{if(e.target.tagName=='INPUT')return;keys[e.code]=1;const n=+e.key;if(playing&&n>=1&&n<=5)upgrade(n-1);if(e.code=='Space')e.preventDefault()};
+onkeyup=e=>keys[e.code]=0;
+onmousemove=e=>{mouse.x=e.clientX;mouse.y=e.clientY};
+onmousedown=e=>{if(e.target===cv)mouse.d=1};onmouseup=()=>mouse.d=0;
+addEventListener('touchstart',e=>{if(!playing||e.target.closest('button,input'))return;e.preventDefault();
+  for(const t of e.changedTouches)tj[t.identifier]={s:t.clientX<W/2?0:1,ox:t.clientX,oy:t.clientY,x:t.clientX,y:t.clientY}},{passive:false});
+addEventListener('touchmove',e=>{if(!playing)return;e.preventDefault();for(const t of e.changedTouches){const j=tj[t.identifier];if(j){j.x=t.clientX;j.y=t.clientY}}},{passive:false});
+const tend=e=>{for(const t of e.changedTouches)delete tj[t.identifier]};
+addEventListener('touchend',tend);addEventListener('touchcancel',tend);
+
+function readInput(){
+  let mx=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0),my=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0),
+      a=Math.atan2(mouse.y-H/2,mouse.x-W/2),f=mouse.d||keys.Space?1:0;
+  for(const t of Object.values(tj)){const dx=t.x-t.ox,dy=t.y-t.oy;
+    if(t.s==0){mx=dx/70;my=dy/70;const q=Math.hypot(mx,my);if(q>1){mx/=q;my/=q}}
+    else if(Math.hypot(dx,dy)>10){a=Math.atan2(dy,dx);f=1}}
+  inp.mx=mx;inp.my=my;inp.a=a;inp.f=f;
+}
+
+/* ---------- rendering ---------- */
+function bar(x,y,w,f,c){g.fillStyle='#1e2b3366';g.fillRect(x-w/2,y,w,5);g.fillStyle=c;g.fillRect(x-w/2,y,w*Math.max(0,f),5)}
+function tank(v){
+  const r=rad(v.l);
+  g.save();g.translate(v.x,v.y);g.rotate(v.a);g.fillStyle='#8c969b';g.strokeStyle='#33404a';g.lineWidth=3;
+  g.fillRect(0,-r*.38,r*1.6,r*.76);g.strokeRect(0,-r*.38,r*1.6,r*.76);g.restore();
+  g.beginPath();g.arc(v.x,v.y,r,0,6.2832);g.fillStyle=COL[v.c];g.fill();g.strokeStyle='#1e2b33';g.lineWidth=v.i==myId?5:3;g.stroke();
+  g.fillStyle='#1e2b33';g.textAlign='center';g.font='bold 15px "Trebuchet MS",sans-serif';g.fillText(v.n,v.x,v.y-r-12);
+  if(v.h<v.m)bar(v.x,v.y+r+8,r*2,v.h/v.m,'#4fa36a');
+}
+let last=performance.now();
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt=Math.min(.1,(now-last)/1000);last=now;
+  if(playing){readInput();if(P.host)Object.assign(P.host.inp,inp)}
+  const k=1-Math.exp(-dt*16);
+  for(const v of Object.values(view)){const t=v.t;v.x+=(t.x-v.x)*k;v.y+=(t.y-v.y)*k;v.a+=(((t.a-v.a+9.4248)%6.2832)-3.1416)*k;for(const f of ['h','m','l','s','q','u','n','c','st'])v[f]=t[f]}
+  const me=view[myId];if(me){cam.x=me.x;cam.y=me.y;z=Math.max(.4,Math.min(W,H)/820)*(1-me.l*.008)}
+
+  g.setTransform(1,0,0,1,0,0);g.fillStyle='#a9b3ae';g.fillRect(0,0,W,H);
+  g.setTransform(z,0,0,z,W/2-cam.x*z,H/2-cam.y*z);
+  g.fillStyle='#d3dad6';g.fillRect(0,0,MAP,MAP);
+  const l=Math.max(0,cam.x-W/2/z),r=Math.min(MAP,cam.x+W/2/z),t=Math.max(0,cam.y-H/2/z),b=Math.min(MAP,cam.y+H/2/z);
+  g.strokeStyle='#c3cbc6';g.lineWidth=1.5;g.beginPath();
+  for(let x=Math.ceil(l/60)*60;x<=r;x+=60){g.moveTo(x,t);g.lineTo(x,b)}
+  for(let y=Math.ceil(t/60)*60;y<=b;y+=60){g.moveTo(l,y);g.lineTo(r,y)}
+  g.stroke();
+  if(S){
+    for(const [x,y,kk,a,f] of S.h){
+      if(x<l-50||x>r+50||y<t-50||y>b+50)continue;
+      const d=SD[kk];g.beginPath();
+      for(let i=0;i<d[0];i++){const q=a+i*6.2832/d[0];g[i?'lineTo':'moveTo'](x+Math.cos(q)*d[1],y+Math.sin(q)*d[1])}
+      g.closePath();g.fillStyle=d[4];g.fill();g.strokeStyle='#1e2b3355';g.lineWidth=3;g.stroke();
+      if(f<1)bar(x,y+d[1]+8,d[1]*1.6,f,'#4fa36a');
+    }
+    const ds=Math.min(.2,(now-snapT)/1000);
+    for(const [x,y,vx,vy,br,c] of S.b){g.beginPath();g.arc(x+vx*ds,y+vy*ds,br,0,6.2832);g.fillStyle=COL[c];g.fill();g.strokeStyle='#1e2b33aa';g.lineWidth=2;g.stroke()}
+    Object.values(view).sort((p,q)=>(p.i==myId)-(q.i==myId)).forEach(tank);
+  }
+
+  /* HUD */
+  g.setTransform(1,0,0,1,0,0);
+  if(S){
+    const top=[...S.p].sort((p,q)=>q.s-p.s).slice(0,6),x0=W-200,w=190;
+    g.fillStyle='#f2f5f3d9';g.fillRect(x0,10,w,28+top.length*20);g.fillStyle='#1e2b33';g.font='bold 14px "Trebuchet MS",sans-serif';g.textAlign='left';g.fillText('Leaderboard',x0+10,29);
+    g.font='13px "Trebuchet MS",sans-serif';
+    top.forEach((p,i)=>{g.textAlign='left';g.fillText(p.n,x0+10,50+i*20,110);g.textAlign='right';g.fillText(p.s,x0+w-10,50+i*20)});
+    if(me){
+      const bw=Math.min(W*.5,380),bx=W/2-bw/2,by=H-34;
+      g.fillStyle='#1e2b3355';g.fillRect(bx,by,bw,16);g.fillStyle='#2f7d86';g.fillRect(bx,by,bw*me.q,16);
+      g.strokeStyle='#1e2b33';g.lineWidth=2;g.strokeRect(bx,by,bw,16);
+      g.fillStyle='#1e2b33';g.textAlign='center';g.font='bold 14px "Trebuchet MS",sans-serif';g.fillText('Level '+me.l+'   Score '+me.s,W/2,by-8);
+      if(me.u>0)g.fillText('Upgrade ready: press 1 to 5 or tap a stat',W/2,by-28);
+    }
+  }
+  g.strokeStyle='#1e2b33';g.lineWidth=2;
+  for(const j of Object.values(tj)){g.beginPath();g.arc(j.ox,j.oy,50,0,6.2832);g.stroke();g.beginPath();g.arc(j.x,j.y,18,0,6.2832);g.stroke()}
+}
+requestAnimationFrame(frame);
+
+/* ---------- menu ---------- */
+const getName=()=>name=$('nm').value.trim().slice(0,14)||'Player'+(Math.random()*90+10|0);
+if(/^#[A-Za-z]{4}$/.test(location.hash))$('code').value=location.hash.slice(1);
+$('solo').onclick=()=>{getName();startSolo()};
+$('host').onclick=()=>{getName();startHost()};
+$('join').onclick=()=>{const c=$('code').value.trim();if(c.length!=4)return msg('Enter the 4-letter room code.');getName();startJoin(c)};
+$('again').onclick=()=>{$('dead').classList.add('hide');if(mode=='client')conn.send({t:'join',n:name});else spawn(P.host)};
+</script>
+</body>
+</html>
